@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boundary-Aware Policy Learning for Agent-Orchestrated Robot Manipulation</title>
+<meta name="description" content="A policy is trained to have a wide and explicit handoff boundary, and the boundary is then expanded with the system's own successful rollouts, for more reliable agent–policy coordination in agent-orchestrated robot manipulation.">
+<meta property="og:title" content="Boundary-Aware Policy Learning for Agent-Orchestrated Robot Manipulation">
+<meta property="og:description" content="A policy is trained to have a wide and explicit handoff boundary, and the boundary is then expanded with the system's own successful rollouts, for more reliable agent–policy coordination in agent-orchestrated robot manipulation.">
+<meta property="og:url" content="https://kaipengfang.github.io/bapl-agentic-manip/">
+<link rel="icon" href="assets/img/favicon.png">
+<link rel="stylesheet" href="assets/fonts/site3.css">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="evidence6.css">
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <a class="nav-brand" href="#top"><img src="assets/img/logo_funnel.svg" alt="" width="22" height="22"><span>Boundary-Aware Policy Learning</span></a>
+  <a class="btn nav-report" href="assets/paper/boundary-aware-policy-learning.pdf" target="_blank" rel="noopener">Detailed Report <small>PDF</small></a>
+  <nav class="nav-progress" id="progress" aria-label="Sections">
+    <i class="np-fill"></i>
+    <a class="np-ms" href="#boundary"><span>Overview</span></a>
+    <a class="np-ms" href="#stage1"><span>Stage 1</span></a>
+    <a class="np-ms" href="#stage2"><span>Stage 2</span></a>
+    <a class="np-ms" href="#console"><span>Replay</span></a>
+    <a class="np-ms" href="#results"><span>Results</span></a>
+    <a class="np-ms" href="#realTop"><span>Real robot</span></a>
+    <a class="np-ms" href="#video"><span>Video</span></a>
+    <i class="np-dot"></i>
+    <b class="np-cur" id="npCur" aria-hidden="true" hidden></b>
+  </nav>
+</header>
+
+<main>
+
+<!-- 1. Cover -->
+<section class="hero" id="top">
+  <video class="hero-bg" data-auto muted loop playsinline preload="none" tabindex="-1" aria-hidden="true"
+         poster="assets/img/posters/render_cup_before.jpg" src="assets/video/render/cup_before.mp4"></video>
+  <div class="hero-shade"></div>
+  <div class="wrap hero-in">
+    <h1><span class="h1-a">Boundary-Aware<br>Policy Learning</span><span class="h1-b">for Agent-Orchestrated Robot Manipulation</span></h1>
+    <p class="tagline"><span class="card">Shape the <mark class="chip g">handoff boundary</mark> of a policy, then expand it.</span></p>
+    <!-- authors, affiliations and notes as on the first page of the paper; no personal links yet -->
+    <p class="authors"><span><a href="https://kaipengfang.github.io/" target="_blank" rel="noopener">Kaipeng Fang</a><sup>1,2,*</sup></span> <span>Yuhao Wang<sup>1,*</sup></span> <span>Ji Zhang<sup>1</sup></span> <span>Yunsong Zhou<sup>2,†</sup></span> <span>Jingkuan Song<sup>3,4</sup></span> <span>Lianli Gao<sup>1,†</sup></span></p>
+    <p class="affils"><span><sup>1</sup>University of Electronic Science and Technology of China</span><i class="row-break"></i><span><sup>2</sup>Shanghai Artificial Intelligence Laboratory</span> <span><sup>3</sup>Tongji University</span> <span><sup>4</sup>Shanghai Innovation Institute</span></p>
+    <p class="notes"><span><sup>*</sup>Equal contribution</span> <span><sup>†</sup>Corresponding authors</span></p>
+    <p class="links">
+      <a class="btn" href="assets/paper/boundary-aware-policy-learning.pdf" target="_blank" rel="noopener">Paper <small>PDF</small></a>
+      <a class="btn is-off" href="#" aria-disabled="true">arXiv <small>soon</small></a>
+      <a class="btn is-off" href="#" aria-disabled="true">Code <small>soon</small></a>
+    </p>
+  </div>
+</section>
+
+<!-- 2. Overview: one episode as footage and bar (one tall step whose text stays in place and switches), then the boundary in 3D (two steps) -->
+<section class="scene" id="boundary">
+  <h2 class="sr">Overview</h2>
+  <div class="wrap scene-grid">
+    <div class="scene-steps">
+      <!-- One tall step. While it scrolls, the playhead of the episode strip runs from the start to the end of the episode, and the text
+           stays in place: "The agent" is the anchor, the two lines under it switch with who controls the robot (before, during and
+           after the policy interval of the episode). Without pinning, the three sentences are plain lines one under the other. -->
+      <div class="step step-tall" data-layer="strip">
+        <div class="tall-pin">
+          <div class="sw" id="stripText">
+            <p class="line sw-s is-cur"><span class="sw-a">The agent</span> <span class="sw-r sw-r1">orchestrates</span> <span class="sw-r sw-r2">the task.</span></p>
+            <p class="note sw-n is-cur">Agents built on general-purpose multimodal models now handle the task level through tool calls: they capture images, segment objects, plan multi-step tasks and recover when a step fails.</p>
+            <p class="line sw-s"><span class="sw-a">The agent</span> <span class="sw-r sw-r1"><mark class="chip y">hands over</mark></span> <span class="sw-r sw-r2">contact to a policy.</span></p>
+            <p class="note sw-n">Such an agent generalizes across layouts and instructions but executes contact poorly, whereas a learned visuomotor policy executes contact well.</p>
+            <p class="line sw-s"><span class="sw-a">The agent</span> <span class="sw-r sw-r1">takes over</span> <span class="sw-r sw-r2">and finishes the task.</span></p>
+          </div>
+        </div>
+        <!-- the episode strip: footage of the moment at the playhead above the bar of the episode -->
+        <div class="layer" id="layer-strip">
+          <div class="es" id="strip"></div>
+        </div>
+      </div>
+      <div class="step" data-layer="s1c">
+        <p class="line">A policy is reliable only inside its <mark class="chip g">handoff boundary</mark>.</p>
+        <p class="note">A policy completes its command reliably only from a limited range of states, and the agent may hand over outside this range. We refer to this range as the <em>handoff boundary</em> of the policy.</p>
+        <div class="layer" id="layer-s1c">
+          <figure class="paper">
+            <video data-clip data-dur="6" muted playsinline preload="none" tabindex="-1" poster="assets/img/posters/boundary3d_c1_boundary.jpg" src="assets/video/boundary3d/c1_boundary.mp4"></video>
+          </figure>
+        </div>
+      </div>
+      <div class="step" data-layer="s1d">
+        <p class="line">Outside it, the handoff often fails.</p>
+        <div class="kf">
+          <p class="kf-lead">Harness VLA, whose agent calls a whole-task policy</p>
+          <p class="kf-num y"><b>80.1 mm</b><span>from the training trajectories, on average, when it calls the policy again</span></p>
+          <p class="kf-num r"><b>36.8%</b><span>of such episodes succeed</span></p>
+        </div>
+        <div class="layer" id="layer-s1d">
+          <figure class="paper">
+            <video data-clip data-dur="7" muted playsinline preload="none" tabindex="-1" poster="assets/img/posters/boundary3d_c1_outside.jpg" src="assets/video/boundary3d/c1_outside.mp4"></video>
+          </figure>
+        </div>
+      </div>
+    </div>
+    <div class="scene-stage"></div>
+  </div>
+</section>
+
+<!-- The idea: (a) to (b) to (c), driven by the scroll -->
+<section class="idea" id="idea" data-ch="2">
+  <div class="idea-pin">
+    <div class="wrap idea-in">
+      <!-- the headline: the name and "the handoff boundary" stay; of the two verbs, the one of the current state of the diagram is large -->
+      <p class="idea-line" id="ideaLine">
+        <span class="sr">Boundary-Aware Policy Learning: shape the handoff boundary, then expand it.</span>
+        <span class="il-name" aria-hidden="true">Boundary-Aware Policy Learning</span>
+        <span class="il-verbs" aria-hidden="true"><span class="il-v il-shape">shape</span><span class="il-arr">→</span><span class="il-v il-expand">expand</span></span>
+        <span class="il-obj" aria-hidden="true">the <mark class="chip g">handoff boundary</mark></span>
+      </p>
+      <div class="idea-vis" id="ideaVis">
+        <figure class="bd-fig" data-ch="0"><figcaption>(a) A policy trained on whole tasks</figcaption><div class="bd-svg"></div></figure>
+        <figure class="bd-fig" data-ch="1"><figcaption>(b) Stage 1: Boundary-Explicit Training</figcaption><div class="bd-svg"></div></figure>
+        <figure class="bd-fig" data-ch="2"><figcaption>(c) Stage 2: Boundary-Expanding Self-Improvement</figcaption><div class="bd-svg"></div></figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. Stage 1 -->
+<section class="stage-head" id="stage1">
+  <div class="wrap stage-grid">
+    <h2 class="stage-title"><span class="stage-n">Stage 1</span>Boundary-Explicit Training</h2>
+    <div class="stage-loop" data-loop="1" aria-hidden="true"><div class="bd-svg"></div></div>
+  </div>
+</section>
+<section class="scene">
+  <div class="wrap scene-grid">
+    <div class="scene-steps">
+      <div class="step" data-layer="wide">
+        <p class="line">Train from start poses sampled by a simple rule.</p>
+          <ul class="because">
+            <li><p class="bc-head">simple rule <span class="bc-arr" aria-hidden="true">→</span> <mark class="chip g">explicit</mark> boundary</p><p class="bc-sub">start poses 8 to 12 cm above the grasp point</p></li>
+            <li><p class="bc-head">diverse start poses <span class="bc-arr" aria-hidden="true">→</span> <mark class="chip g">wide</mark> boundary</p></li>
+          </ul>
+        <div class="layer" id="layer-wide">
+          <figure class="paper">
+            <video data-clip data-dur="10.8" muted playsinline preload="none" tabindex="-1" poster="assets/img/posters/x1_wide_v8.jpg" src="assets/video/boundary3d/x1_wide_v8_scrub.mp4"></video>
+          </figure>
+        </div>
+      </div>
+      <div class="step" data-layer="protocol">
+        <p class="line">A handoff protocol gives the agent the same rule.</p>
+        <p class="note">Since the boundary is explicit, these rules need no example images or task-specific descriptions, and the same protocol applies to every task.</p>
+        <div class="layer" id="layer-protocol">
+          <div class="proto">
+            <div class="proto-src">
+              <p class="proto-title">sampling rule</p>
+              <p class="proto-srule">start poses 8 to 12 cm above the <u>grasp point</u></p>
+            </div>
+            <div class="proto-main">
+              <p class="proto-title">handoff protocol</p>
+              <div class="proto-rules">
+                <div class="proto-rule" data-seg="a" tabindex="0"><b>approach:</b> near <u>grasp point</u></div>
+                <div class="proto-rule" data-seg="p" tabindex="0"><b>call policy:</b> one segment</div>
+                <div class="proto-rule" data-seg="c" tabindex="0"><b>check:</b> else approach again</div>
+              </div>
+              <div class="proto-bar" aria-hidden="true">
+                <span class="pb pb-agent" data-seg="a">Agent</span><i class="pb-dot"></i><span class="pb pb-policy" data-seg="p">Policy</span><span class="pb pb-agent" data-seg="c">Agent</span>
+              </div>
+            </div>
+            <p class="proto-who"><span>Agent</span><svg class="mark ok" viewBox="0 0 20 20" width="22" height="22" aria-hidden="true"><circle cx="10" cy="10" r="9"/><path d="M5.5 10.5l3 3 6-7"/></svg></p>
+            <p class="proto-chain"><span>simple rule</span><i aria-hidden="true">→</i><span>explicit boundary</span><i aria-hidden="true">→</i><span>short protocol</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scene-stage"></div>
+  </div>
+</section>
+
+<section class="block" id="analysis">
+  <!-- the sentence in the left column, as high as the right column: the chart card, then one gallery row (its title and legend at the
+       left of the row, the four tiles at the right). The two numbers and the chip of the sentence are linked to the chart (data-link,
+       app.js initLinks). -->
+  <div class="wrap an-grid">
+    <div class="two-text">
+      <h3 class="qs"><span class="qs-w qs-lead">Quantitatively,</span> <b class="qs-n qs-a qs-link" data-link="handoffs" tabindex="0">91.1%</b> <span class="qs-w qs-mid">of the first handoffs lie <mark class="chip g qs-link" data-link="within" tabindex="0">within 40&nbsp;mm</mark>,</span> <span class="qs-w qs-sub">where the policy succeeds in at least</span> <span class="qs-row"><b class="qs-n qs-b qs-link" data-link="policy" tabindex="0">82.2%</b> <span class="qs-w qs-sub">of trials.</span></span></h3>
+    </div>
+    <figure class="paper chartcard an-card">
+      <div class="chart-bins" id="binsChart"></div>
+    </figure>
+    <!-- four cases of the paper's figure "First handoff positions": small tiles, a larger view on hover, focus or tap; the title and the
+         legend belong to the tiles and stand beside them -->
+    <div class="cases" id="cases">
+      <div class="cases-head">
+        <p class="cases-title">First handoffs in four tasks</p>
+        <ul class="legend">
+          <li><i class="sw sw-pt-grey"></i>training poses</li>
+          <li><i class="sw sw-pt-green"></i>agent handoffs</li>
+        </ul>
+      </div>
+      <ul class="cases-row" id="casesRow"></ul>
+      <figure class="cases-pop paper" id="casesPop" hidden><img alt="" id="casesPopImg"><figcaption id="casesPopCap"></figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Stage 2 -->
+<section class="stage-head" id="stage2">
+  <div class="wrap stage-grid">
+    <h2 class="stage-title"><span class="stage-n">Stage 2</span>Boundary-Expanding Self-Improvement</h2>
+    <div class="stage-loop" data-loop="2" aria-hidden="true"><div class="bd-svg"></div></div>
+  </div>
+</section>
+<section class="scene" id="s2scene">
+  <div class="wrap scene-grid">
+    <div class="scene-steps">
+      <div class="step" data-layer="calls">
+        <p class="line cl"><span class="cl-a">Handoffs are now reliable,</span> <span class="cl-b">but the agent still needs</span> <span class="cl-c">many language-model calls.</span></p>
+        <div class="layer" id="layer-calls">
+          <div class="cost" id="cost">
+            <div class="cost-bar" id="costBar"></div>
+            <div class="cost-nums">
+              <p class="cost-num"><b class="count" id="costCalls">16</b><span>LLM calls</span><em>costly</em></p>
+              <p class="cost-num"><b class="count" id="costSecs">191</b><span>seconds</span><em>slow</em></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- one short clip that plays by itself when the step becomes live (story6.js clip): a complete system rollout with its bar, the
+           curation agent labels the segments, the suboptimal ones are removed, many curated rollouts flow into the policy, policy becomes
+           policy′ (built by tools/retrain_anim). Raw footage only before the removal; after it, curated training-side rollouts. -->
+      <div class="step" data-layer="retrain">
+        <p class="line">Retrain the policy on successful system rollouts.</p>
+        <div class="layer" id="layer-retrain">
+          <figure class="paper rt-fig">
+            <video data-clip data-dur="9.9" data-rate="1.15" muted playsinline preload="none" tabindex="-1" aria-label="successful system rollouts, policy, policy′" poster="assets/img/posters/curate_retrain.jpg" src="assets/video/retrain/curate_retrain.mp4"></video>
+          </figure>
+        </div>
+      </div>
+      <div class="step" data-layer="expand">
+        <p class="line">The boundary extends to earlier stages of each task.</p>
+        <div class="layer" id="layer-expand">
+          <figure class="paper">
+            <!-- data-rate: played a little faster than recorded (story6.js clip); data-dur stays the end time of the clip -->
+            <video data-clip data-dur="7.2" data-rate="1.15" muted playsinline preload="none" tabindex="-1" poster="assets/img/posters/s10_extend_cup.jpg" src="assets/video/boundary3d/s10_extend_cup.mp4"></video>
+          </figure>
+        </div>
+      </div>
+      <div class="step" data-layer="sooner">
+        <p class="line">The agent <mark class="chip y">hands over</mark> sooner.</p>
+        <div class="layer" id="layer-sooner">
+          <div class="sooner" id="sooner">
+            <div class="so-rows" id="soRows"></div>
+            <div class="so-res" id="soRes">
+              <p><b><span class="so-from">16</span> <span class="so-arr" aria-hidden="true">→</span> <span class="so-to" id="soCalls">4</span></b><span>LLM calls</span></p>
+              <p><b><span class="so-from">191 s</span> <span class="so-arr" aria-hidden="true">→</span> <span class="so-to"><span id="soSecs">135</span> s</span></b></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scene-stage"></div>
+  </div>
+</section>
+
+<section class="block" id="selfimprove">
+  <div class="wrap">
+    <div class="si">
+      <div class="si-nums">
+        <h3>Self-improvement makes the system faster and cheaper to run.</h3>
+        <p class="bignum"><b>−41.3%</b><span>API cost per episode after self-improvement, RoboTwin 2.0</span></p>
+        <p class="bignum"><b>−37.5%</b><span>time per episode after self-improvement, RoboTwin 2.0</span></p>
+      </div>
+      <figure class="paper chartcard si-card">
+        <div class="si-top">
+          <p class="chart-title">Before and after self-improvement on all 50 tasks.</p>
+          <div class="seg" role="group" aria-label="Setting" id="siSwitch">
+            <button type="button" data-k="easy" aria-pressed="true">easy</button><button type="button" data-k="hard" aria-pressed="false">hard</button>
+          </div>
+        </div>
+        <div class="si-grid" id="siChart"></div>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- B2:BEGIN  everything from here to B2:END belongs to the evidence half -->
+<!-- 5. Replay: one console, full width. Transport on top, the three bars on one time axis with one playhead,
+     the three head-camera clips under them, the agent log folded under the clips. -->
+<section class="block rx-sec" id="replay">
+  <div class="wrap">
+    <h2 class="h2">Where the agent hands over decides how the system behaves</h2>
+    <div class="rx" id="console">
+      <div class="rx-top">
+        <button type="button" class="rx-play" id="conPlay" aria-label="Play">
+          <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path class="i-play" d="M5 3l12 7-12 7z"/><path class="i-pause" d="M4 3h4v14H4zM12 3h4v14h-4z"/></svg><span id="conPlayLab">Play</span>
+        </button>
+        <div class="rx-jump">
+          <button type="button" class="rx-btn" id="conPrev" aria-label="Previous handoff" title="Previous handoff">
+            <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true"><path class="ar" d="M11 4l-6 6 6 6"/><circle cx="19" cy="10" r="5"/></svg>
+          </button>
+          <button type="button" class="rx-btn" id="conNext" aria-label="Next handoff" title="Next handoff">
+            <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true"><circle cx="9" cy="10" r="5"/><path class="ar" d="M17 4l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <div class="seg" role="group" aria-label="Playback speed" id="conSpeed">
+          <button type="button" data-s="6" aria-pressed="false">6×</button><button type="button" data-s="12" aria-pressed="true">12×</button><button type="button" data-s="24" aria-pressed="false">24×</button>
+        </div>
+        <p class="rx-clock"><b id="conT">0</b> s</p>
+        <ul class="legend rx-legend" aria-label="Legend of the bars">
+          <li><i class="sw sw-agent"></i>Agent</li>
+          <li><i class="sw sw-policy"></i>Policy</li>
+          <li><i class="sw sw-dot"></i>handoff</li>
+          <li><i class="sw sw-tick"></i>LLM calls</li>
+        </ul>
+      </div>
+      <div class="rx-bars" id="tracks" role="slider" tabindex="0" aria-label="Episode time" aria-valuemin="0" aria-valuenow="0"></div>
+      <div class="rx-mons" id="monitors"></div>
+      <div class="rx-logbar">
+        <button type="button" class="rx-logbtn" id="logBtn" aria-expanded="false" aria-controls="log"><i aria-hidden="true"></i>Agent log</button>
+      </div>
+      <div class="rx-log" id="log" hidden></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Results -->
+<section class="block" id="results">
+  <div class="wrap">
+    <h2 class="sr">Results</h2>
+    <p class="headline"><b>98.4%</b><span>Success in randomized scenes of RoboTwin 2.0.</span></p>
+    <div class="gal">
+      <p class="gal-head"><b>RoboTwin 2.0</b> <span>50 tasks</span></p>
+      <div class="wall" id="wall" aria-label="Tasks of RoboTwin 2.0"></div>
+      <p class="gal-head"><b>RoboDojo</b> <span>9 clips</span></p>
+      <div class="wall" id="wallDojo" aria-label="Tasks of RoboDojo"></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="main">
+  <div class="wrap">
+    <h3>An explicit handoff boundary brings large gains on both benchmarks.</h3>
+    <figure class="paper mx-card">
+      <div class="seg mx-tabs" role="tablist" aria-label="Benchmark setting" id="mainSwitch">
+        <button type="button" role="tab" id="mxTabC2r" data-k="c2r" aria-selected="true" aria-controls="mainChart">RoboTwin 2.0, randomized scenes</button><button type="button" role="tab" id="mxTabAvg" data-k="avg" aria-selected="false" aria-controls="mainChart" tabindex="-1">RoboDojo, average</button>
+      </div>
+      <div class="mx-chart" id="mainChart" role="tabpanel" aria-labelledby="mxTabC2r"></div>
+      <div class="mx-foot" id="mainFoot">
+        <p data-k="c2r"><b>+26.4</b> points over the strongest baseline, randomized scenes of RoboTwin 2.0</p>
+        <p data-k="avg"><b>+28.4</b> points over the strongest baseline on RoboDojo (average)</p>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="block" id="ablation">
+  <div class="wrap ab-two">
+    <div class="ab-text">
+      <h3>Both our policy and the handoff protocol contribute.</h3>
+      <p>Our policy alone raises the success rate of Harness VLA from 72.0% to 93.0%, and our handoff protocol alone raises it to 86.0% even with the whole-task policy.</p>
+    </div>
+    <figure class="paper ab-card">
+      <p class="chart-title">RoboTwin 2.0, randomized scenes, all 50 tasks</p>
+      <div class="ab-ctrl">
+        <div class="ab-sw">
+          <span class="ab-swlab">our policy</span>
+          <div class="seg" role="group" aria-label="our policy" id="abPolicy"><button type="button" data-v="0" aria-pressed="false">off</button><button type="button" data-v="1" aria-pressed="true">on</button></div>
+        </div>
+        <div class="ab-sw">
+          <span class="ab-swlab">our handoff protocol</span>
+          <div class="seg" role="group" aria-label="our handoff protocol" id="abProto"><button type="button" data-v="0" aria-pressed="false">off</button><button type="button" data-v="1" aria-pressed="true">on</button></div>
+        </div>
+        <p class="ab-big" aria-live="polite"><b id="abVal">98.4</b><span>success (%)</span></p>
+      </div>
+      <div class="ab-chart" id="ablChart"></div>
+    </figure>
+  </div>
+</section>
+
+<!-- 6b. Real robot: left the headline, the instruction and the list Perception / Plan / Execution (lit by the player);
+     right the player (picture with boxes and numbered arrows, the ownership bar, Play and the playback speed) -->
+<section class="block rr-sec" id="real">
+  <div class="wrap">
+    <h2 class="sr">Real robot</h2>
+    <div class="rr-two is-idle" id="realTop">
+      <div class="rr-text">
+        <h3>We deploy our system in the real world.</h3>
+        <p class="rr-inst"><span class="card">“Put the fruits on the table into the white bowl.”</span></p>
+        <ol class="rr-list" id="realList">
+          <li class="rr-part" data-p="look"><p class="rr-ph"><b>Perception</b> <span>head camera + SAM3</span></p></li>
+          <li class="rr-part" data-p="plan"><p class="rr-ph"><b>Plan</b></p>
+            <ol class="rr-rows"><li><i>1</i> left hand: pear to bowl</li><li><i>2</i> right hand: orange to bowl</li></ol></li>
+          <li class="rr-part" data-p="exec"><p class="rr-ph"><b>Execution</b></p>
+            <ul class="rr-subs"><li>move</li><li>hand over <span class="rr-pol">Policy</span></li><li>check</li><li>place</li></ul></li>
+        </ol>
+      </div>
+      <div class="rr-player is-idle" id="realPlayer">
+        <div class="rr-view">
+          <div class="rr-scr">
+            <video id="realHead" muted playsinline preload="none" tabindex="-1" aria-label="Head camera" poster="assets/img/real/real_head_poster.jpg" src="assets/video/real/real_head.mp4"></video>
+            <svg class="rr-arrows" id="realArrows" viewBox="0 96 640 384" preserveAspectRatio="none" aria-hidden="true"></svg>
+            <div class="rr-ov" id="realOv" aria-hidden="true"></div>
+            <figure class="rr-wrist" id="realWrist" hidden>
+              <video muted playsinline preload="none" tabindex="-1" aria-label="Wrist camera, left hand" poster="assets/img/real/real_wrist_left_poster.jpg" src="assets/video/real/real_wrist_left.mp4"></video>
+              <video muted playsinline preload="none" tabindex="-1" aria-label="Wrist camera, right hand" poster="assets/img/real/real_wrist_right_poster.jpg" src="assets/video/real/real_wrist_right.mp4" hidden></video>
+            </figure>
+          </div>
+        </div>
+        <div class="rr-barbox">
+          <ul class="legend rr-legend" aria-label="Legend of the bar">
+            <li><i class="sw sw-agent"></i>Agent</li>
+            <li><i class="sw sw-policy"></i>Policy</li>
+            <li><i class="sw sw-dot"></i>handoff</li>
+            <li><i class="sw sw-tick"></i>LLM calls</li>
+          </ul>
+          <div class="rr-bar" id="realBar" role="slider" tabindex="0" aria-label="Episode time" aria-valuemin="0"></div>
+        </div>
+        <div class="rr-ctrl">
+          <button type="button" class="rx-play" id="realPlay" aria-label="Play">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path class="i-play" d="M5 3l12 7-12 7z"/><path class="i-pause" d="M4 3h4v14H4zM12 3h4v14h-4z"/></svg><span>Play</span>
+          </button>
+          <div class="seg" role="group" aria-label="Playback speed" id="realSpeed">
+            <button type="button" data-s="24" aria-pressed="true">24×</button><button type="button" data-s="48" aria-pressed="false">48×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. Video, More results, BibTeX -->
+<section class="block" id="video">
+  <div class="wrap vx">
+    <div class="vx-text">
+      <h2 class="h2">Video</h2>
+      <div class="vx-lines" role="radiogroup" aria-label="Video" id="vTabs">
+        <button type="button" role="radio" data-k="highlights" aria-checked="true">Highlights<small>1 min 56 s</small></button>
+        <button type="button" role="radio" data-k="talk" aria-checked="false" tabindex="-1">Presentation<small>7 min 14 s</small></button>
+      </div>
+    </div>
+    <div class="vx-player paper" id="player">
+      <video data-k="highlights" preload="none" playsinline poster="assets/img/posters/highlights.jpg" src="assets/video/highlights.mp4"></video>
+      <video data-k="talk" preload="none" playsinline poster="assets/img/posters/presentation.jpg" src="assets/video/presentation.mp4" hidden></video>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="more">
+  <div class="wrap">
+    <h2 class="h2">More results</h2>
+    <div class="mr-rows">
+
+      <details class="mr-row" id="mrDojo">
+        <summary><span class="mr-t">The agent and the policy complement each other.</span></summary>
+        <div class="mr-body mr-wide">
+          <div class="mr-text">
+            <p>Memory and open-vocabulary tasks rely on the agent: the whole-task policy π<sub>0.5</sub> rarely succeeds, whereas AGP, an agent without a learned policy, performs much better on both. AGP achieves only 10.0% on the generalization subset, since its tasks test generalization to new scenes through diverse physical interactions with objects. By combining the two, our system leads in all three subsets, with the agent handling task-level reasoning and orchestration and the policy providing closed-loop control for physical interaction with objects.</p>
+          </div>
+          <figure class="paper mr-card">
+            <div class="mr-dojo" id="mrDojoChart"></div>
+            <figcaption class="mr-cap">Success rates (%). †Reported by the official release.</figcaption>
+          </figure>
+        </div>
+      </details>
+
+      <details class="mr-row" id="mrTable1">
+        <summary><span class="mr-t">Success rates on RoboTwin 2.0 and RoboDojo</span></summary>
+        <div class="mr-body">
+          <div class="mr-text">
+            <p>A whole-task policy can complete most tasks in clean scenes (C2C), where π<sub>0.5</sub> alone reaches 85.8% and Harness VLA reaches 96.0%, but randomization lowers them to 40.0% and 72.0%, whereas the success rate of our system does not drop.</p>
+            <p class="mr-note">On RoboTwin 2.0, data collection and exploration use clean scenes, and evaluation uses clean (C2C) or randomized (C2R) scenes. Gen., Mem. and Open denote the generalization, memory and open-vocabulary subsets. Shaded columns are the main results: the harder C2R setting and the task-weighted average (Avg.). †Reported by the official release.</p>
+          </div>
+          <figure class="paper mr-card mr-tcard"><table class="mr-table" id="mrT1"></table></figure>
+        </div>
+      </details>
+
+      <details class="mr-row" id="mrPolicy">
+        <summary><span class="mr-t">The policy is reliable near its training data.</span></summary>
+        <div class="mr-body">
+          <div class="mr-text">
+            <p>We evaluate our policy on 147 subtasks of physical interaction with objects after boundary-explicit training. Starting from training poses, the policy reaches 93.2% in clean scenes and 89.8% in randomized scenes, so it generalizes well across scene appearance. Furthermore, starting from new poses, namely held-out start poses and their shifts by up to 4 cm, its success rate stays high at 83.7%.</p>
+          </div>
+          <figure class="paper mr-card">
+            <div class="mx-chart" id="mrAlone"></div>
+            <figcaption class="mr-cap">Success rate of our policy alone on the 147 subtasks in three settings.</figcaption>
+          </figure>
+        </div>
+      </details>
+
+      <details class="mr-row" id="mrModels">
+        <summary><span class="mr-t">Both the language model and the reasoning effort of the agent affect system performance.</span></summary>
+        <div class="mr-body">
+          <div class="mr-text">
+            <p>The four other language models reach 67.7% to 85.0% without retraining the policy, compared with 98.7% for Claude Opus 5.5. For Claude Opus 5.5, low effort lowers the API cost per episode from $1.53 to $0.88 but also lowers the success rate to 80.3%, whereas max effort reaches 99.0%, only 0.3 percentage points above high effort, at more than twice the cost.</p>
+            <p class="mr-note">We report the success rate (%) on the 30-task subset of RoboTwin 2.0 (C2R), with 10 episodes per task, and the API cost per evaluation episode at official list prices (USD).</p>
+          </div>
+          <figure class="paper mr-card mr-tcard"><table class="mr-table mr-t2" id="mrT2"></table></figure>
+        </div>
+      </details>
+
+      <details class="mr-row" id="mrCloser">
+        <summary><span class="mr-t">A closer look at agent-direct control</span></summary>
+        <div class="mr-body cl-body">
+          <p class="cl-lead">Before building our system, we let an agent built on a general-purpose multimodal model control a dual-arm robot directly on RoboTwin 2.0 and RoboDojo without any robot training, which we call agent-direct control.</p>
+          <div class="cl-two">
+            <div class="cl-txt cl-left">
+              <h4 class="cl-h">What the agent does well</h4>
+              <p class="cl-s"><b>The agent is strong at task-level decisions without robot training.</b> On RoboDojo, it passes <em>62.5%</em> of the open-vocabulary configurations on the first attempt but none of the precision configurations.</p>
+            </div>
+            <div class="cl-txt cl-right">
+              <h4 class="cl-h">Where the agent falls short</h4>
+              <p class="cl-s"><b>Fewer than half of the failed trials are attributed to the agent itself.</b> The failures of the agent itself mostly lie in physical interaction with objects.</p>
+            </div>
+            <figure class="paper cl-card cl-left" id="clPassed"></figure>
+            <figure class="paper cl-card cl-right" id="clCauses" data-agt="red"></figure>
+            <div class="cl-after cl-right">
+              <p class="cl-s"><b>Most of the time goes to language-model inference.</b> Language-model inference takes <em>93.0%</em> of the total time on RoboTwin 2.0 and <em>86.5%</em> on RoboDojo.</p>
+            </div>
+          </div>
+          <div class="cl-disc">
+            <h4 class="cl-h">Discussion and future directions</h4>
+            <ul class="cl-dirs">
+              <li class="is-ours"><span class="cl-st">Agent-direct control is general but weak at physical interaction with objects.</span><span class="cl-pr">how to combine reasoning with learned control</span></li>
+              <li><span class="cl-st">Agent-direct control is deliberate but slow.</span><span class="cl-pr">where to spend its reasoning</span></li>
+              <li><span class="cl-st">Agent-direct control needs no training but does not learn from experience by itself.</span><span class="cl-pr">how to turn its experience into ability</span></li>
+              <li><span class="cl-st">Agent-direct control follows language, but existing benchmarks do not evaluate it well.</span><span class="cl-pr">how to evaluate it</span></li>
+            </ul>
+            <div class="cl-close">
+              <p class="cl-ans">Among the four research directions above, this paper mainly addresses the first, <span class="cl-hl">how to combine reasoning with learned control</span>, and hands physical interaction with objects over to a learned policy.</p>
+              <p class="cl-end">We believe that agents for robotics are a promising path toward general physical intelligence.</p>
+            </div>
+          </div>
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<section class="block" id="bibtex">
+  <div class="wrap narrow">
+    <h2 class="h2">BibTeX</h2>
+    <div class="bib">
+      <button type="button" class="bib-copy" id="bibCopy">Copy</button>
+<pre id="bibText">@article{boundaryaware2026,
+  title   = {Boundary-Aware Policy Learning for Agent-Orchestrated Robot Manipulation},
+  author  = {Fang, Kaipeng and Wang, Yuhao and Zhang, Ji and Zhou, Yunsong and Song, Jingkuan and Gao, Lianli},
+  journal = {arXiv preprint},
+  year    = {2026}
+}</pre>
+    </div>
+  </div>
+</section>
+
+<!-- B2:END -->
+</main>
+
+<dialog class="viewer" id="viewer" aria-label="Clip">
+  <div class="vw-top"><p class="vw-title"><b id="vwLabel"></b><span id="vwGroup"></span></p><button type="button" class="vw-x" id="vwClose" aria-label="Close">×</button></div>
+  <video id="vwVideo" muted loop playsinline controls preload="none"></video>
+  <div class="vw-nav"><button type="button" id="vwPrev">Previous</button><span id="vwCount"></span><button type="button" id="vwNext">Next</button></div>
+</dialog>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span><img src="assets/img/logo_funnel.svg" alt="" width="18" height="18">Boundary-Aware Policy Learning for Agent-Orchestrated Robot Manipulation</span>
+    <a href="#top">Back to top</a>
+  </div>
+</footer>
+
+<script src="assets/data/results.js"></script>
+<script src="assets/data/episodes.js"></script>
+<script src="assets/data/real.js"></script>
+<script src="app.js"></script>
+<script src="diagram6.js"></script>
+<script src="story6.js"></script>
+<script src="stage6.js"></script>
+<script src="replay6.js"></script>
+<script src="more6.js"></script>
+<script src="real6.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>
