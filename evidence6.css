@@ -494,3 +494,8 @@
   #realList .rr-part { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
   #realList .rr-ph b, #realList .rr-ph span, #realList .rr-rows, #realList .rr-subs { grid-column: 1; }
 }
+
+/* phones and narrow windows (2026-11-25): the Video player fits the visible height (svh where known); the green phrase of the closing
+   paragraph of "A closer look" may wrap (on a 320 px screen it ran past the right edge) */
+@media (max-width: 979px) { .vx-player video { max-height: calc(100svh - 130px); } }
+@media (max-width: 620px) { #mrCloser .cl-hl { white-space: normal; } }

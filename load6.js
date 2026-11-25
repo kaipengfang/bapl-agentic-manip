@@ -1,6 +1,7 @@
 /* Boundary-Aware Policy Learning: fetching the page's media in page order.
-   On a computer every image and video the page uses is fetched front to back, six files at a time; the two films of the Video section
-   come last and are not waited for (they stream while they play). Over http(s) each file is fetched whole, which gives an exact share
+   On a computer every image and video the page uses is fetched front to back, six files at a time. The loading screen waits for
+   everything except the task walls of the Results block: their clips (one per task, played on hover) and stills,
+   about 120 small files, come after it in the background, and the two films of the Video section last (they stream while they play). Over http(s) each file is fetched whole, which gives an exact share
    of bytes for the loading screen (gate6.js), and a video that has not started yet is switched to the downloaded copy, so that clips
    driven by scrolling never wait for the network (a video element alone stops buffering after a few seconds of a long file).
    From file:// there is no fetch: the video elements themselves preload, one after the other.
@@ -44,7 +45,8 @@
       url = abs(url);
       if (seen[url]) { if (node) seen[url].nodes.push(node); return; }     /* one file, several elements (the cover and the strip) */
       var k = key(url), w = SIZES[k], it = { url: url, key: k, kind: kind, nodes: node ? [node] : [], part: part(owner), w: w || (kind === 'img' ? 6e4 : 1e6),
-        sized: !!w, got: 0, state: 0, late: !!owner.closest('#player') };
+        sized: !!w, got: 0, state: 0, late: !!owner.closest('#player'), after: !!owner.closest('#wall, #wallDojo') };
+      it.free = it.late || it.after;     /* not counted by the loading screen */
       seen[url] = it; L.items.push(it);
     }
     $$('img, video, [data-video]').forEach(function (n) {
@@ -54,8 +56,8 @@
       } else if (n.tagName === 'IMG') add(n.getAttribute('src'), 'img', n, n);
       else add(n.getAttribute('data-video'), 'tile', n, n);
     });
-    /* a file that is both a poster and a frame of an early part keeps its first place; the films stay out of the count */
-    L.items.forEach(function (it) { var p = L.parts[it.part]; if (it.late) { p.late = true; return; } p.total += it.w; p.n++; L.total += it.w; });
+    /* a file that is both a poster and a frame of an early part keeps its first place; the gallery and the films stay out of the count */
+    L.items.forEach(function (it) { var p = L.parts[it.part]; if (it.late) p.late = true; if (it.free) return; p.total += it.w; p.n++; L.total += it.w; });
   }
 
   function emit() {
@@ -64,16 +66,16 @@
     document.dispatchEvent(new CustomEvent('bapl:load', { detail: L }));
   }
   function changed() { if (!raf) raf = requestAnimationFrame(emit); }
-  function credit(it, n) { if (n <= 0) return; it.got += n; if (!it.late) { L.got += n; L.parts[it.part].got += n; } changed(); }
+  function credit(it, n) { if (n <= 0) return; it.got += n; if (!it.free) { L.got += n; L.parts[it.part].got += n; } changed(); }
   function resize(it, n) {
     if (!n || n === it.w) return;
-    if (!it.late) { L.total += n - it.w; L.parts[it.part].total += n - it.w; }
+    if (!it.free) { L.total += n - it.w; L.parts[it.part].total += n - it.w; }
     it.w = n; it.sized = true;
   }
   function finish(it) {
     credit(it, it.w - it.got);
     it.state = 2;
-    if (!it.late) L.parts[it.part].nDone++;
+    if (!it.free) L.parts[it.part].nDone++;
     active--; pump();
   }
 
@@ -126,7 +128,13 @@
       if (HTTP && it.kind === 'video' && !it.nodes.some(idle)) { it.self = true; finish(it); continue; }
       (HTTP ? fetchWhole(it) : preloadElement(it)).then(finish.bind(null, it), function () { it.failed = true; finish(it); });
     }
-    if (!active && !queue.length && !L.done) { L.done = true; emit(); films(); }
+    if (active || queue.length) return;
+    if (!L.done) {     /* what the loading screen waits for is in: then the gallery, in the background */
+      L.done = true; emit();
+      queue = L.items.filter(function (it) { return it.after; });
+      if (queue.length) { pump(); return; }
+    }
+    if (!L.filmsStarted) { L.filmsStarted = true; films(); }
   }
   /* after everything else: the films, one after the other, as far as the browser buffers them ahead */
   function films() {
@@ -147,7 +155,7 @@
   function start() {
     if (L.started) return;
     L.started = true;
-    queue = L.items.filter(function (it) { return !it.late; });
+    queue = L.items.filter(function (it) { return !it.free; });
     emit(); pump();
   }
 

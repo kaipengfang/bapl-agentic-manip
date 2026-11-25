@@ -911,3 +911,17 @@ html:not(.pinned) .idea-in { align-items: start; }
 .vload.is-on { opacity: 1; animation: vload-turn .8s linear infinite; }
 @keyframes vload-turn { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .vload.is-on { animation-duration: 2.4s; } }
+
+/* phones and narrow windows (2026-11-25): the nav keeps its brand and report button but drops the progress line with its milestones
+   (their labels fell over the headings); no text enlargement when a phone turns; the clip viewer fits the visible height (svh where known).
+   On the narrowest screens the handoff card of the opening strip wraps instead of running off the left edge. */
+@media (max-width: 979px) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  .nav-progress { display: none; }
+  .viewer video { max-height: calc(100svh - 170px); }
+}
+@media (max-width: 400px) {
+  .es { --lead: 64px; }
+  .es-cmd { left: 0 !important; white-space: normal; text-align: right; }
+  .es-cmd .card { text-align: left; }
+}

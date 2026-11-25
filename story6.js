@@ -60,6 +60,7 @@
         if (fs) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
         var req = box.requestFullscreen || box.webkitRequestFullscreen;
         if (req) req.call(box);
+        else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();     /* iPhone: no full screen for a box, only for the video itself */
       });
     }
     v.parentNode.classList.add('clipbox');
