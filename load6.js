@@ -1,5 +1,5 @@
 /* Boundary-Aware Policy Learning: fetching the page's media in page order.
-   On a computer every image and video the page uses is fetched front to back, two files at a time; the two films of the Video section
+   On a computer every image and video the page uses is fetched front to back, six files at a time; the two films of the Video section
    come last and are not waited for (they stream while they play). Over http(s) each file is fetched whole, which gives an exact share
    of bytes for the loading screen (gate6.js), and a video that has not started yet is switched to the downloaded copy, so that clips
    driven by scrolling never wait for the network (a video element alone stops buffering after a few seconds of a long file).
@@ -14,7 +14,9 @@
                ['#results', 'Results'], ['#realTop', 'Real robot'], ['#video', 'Video'], ['#more', 'More results']];
   var TYPES = { mp4: 'video/mp4', webm: 'video/webm', jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', svg: 'image/svg+xml' };
   var L = B.load = { items: [], parts: [], got: 0, total: 0, p: 0, done: false, started: false };
-  var queue = [], active = 0, MAX = 2, raf = 0;
+  /* six at a time: each file waits about half a second before its bytes come (GitHub Pages, measured 2026-11-25), and the page has
+     about 150 files; with two at a time the waiting alone took half a minute */
+  var queue = [], active = 0, MAX = 6, raf = 0;
   /* while the loading screen is up the parts of the page do not start their own downloads, which would jump the queue */
   B.mayLoad = function () { return !html.classList.contains('gate-load'); };
   /* a part that needs a video asks for it here: load() resets an element, so a video that already has data (often the downloaded copy)
