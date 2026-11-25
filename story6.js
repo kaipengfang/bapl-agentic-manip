@@ -329,9 +329,9 @@
     B.strip = S;
   }
   function loadStrip() {
-    if (strip.ready) return;
+    if (strip.ready || !B.mayLoad()) return;     /* not while the loading screen is up: load6.js fetches in page order */
     strip.ready = true;
-    strip.vids.forEach(function (o) { o.v.preload = 'auto'; o.v.load(); });
+    strip.vids.forEach(function (o) { B.want(o.v); });
   }
   function seekTo(o, f) {
     o.target = f;
@@ -482,9 +482,8 @@
   }
 
   /* ------------------------------------------------------------ loading
-     1. After the page has loaded, every video is fetched in page order, one after the other, so that a clip is usually ready before the
-        reader reaches it; the two long videos of the Video section come last. A video the reader has already started is skipped.
-     2. While a video that should play (or show a frame) is still waiting for data, a small spinner turns over it. */
+     While a video that should play (or show a frame) is still waiting for data, a small spinner turns over it.
+     Fetching the page's media in page order is load6.js. */
   function initLoading() {
     var vids = $$('video').filter(function (v) { return !v.classList.contains('hero-bg'); });
     vids.forEach(function (v) {
@@ -501,21 +500,6 @@
       v.addEventListener('seeking', function () { if (v.readyState < 3) on(); });
       ['playing', 'canplay', 'canplaythrough', 'seeked', 'pause', 'error', 'emptied'].forEach(function (e) { v.addEventListener(e, off); });
     });
-    /* the queue: page order, the Video section last */
-    var late = vids.filter(function (v) { return v.closest('#player'); }), queue = vids.filter(function (v) { return late.indexOf(v) < 0; }).concat(late);
-    function next() {
-      var v = queue.shift();
-      if (!v) return;
-      if (v.readyState > 0 || !v.paused || !v.currentSrc && !v.getAttribute('src')) { next(); return; }
-      var done = false, t = 0;
-      function go() { if (done) return; done = true; clearTimeout(t); ['canplaythrough', 'error'].forEach(function (e) { v.removeEventListener(e, go); }); next(); }
-      v.addEventListener('canplaythrough', go); v.addEventListener('error', go);
-      t = setTimeout(go, 15000);     /* a slow file does not hold up the rest: the browser keeps fetching it */
-      v.preload = 'auto';
-      try { v.load(); } catch (e) { go(); }
-    }
-    var start = function () { setTimeout(next, 600); };
-    if (document.readyState === 'complete') start(); else window.addEventListener('load', start);
   }
 
   B.parts.push(initDwell, initClips, initStrip);

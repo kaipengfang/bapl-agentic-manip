@@ -72,15 +72,15 @@
     }
 
     function load() {
-      if (st.ready) return;
+      if (st.ready || !B.mayLoad()) return;     /* not while the loading screen is up: load6.js fetches in page order */
       st.ready = true;
-      [head].concat(wrists).forEach(function (tr) { tr.video.preload = 'auto'; tr.video.load(); });
+      [head].concat(wrists).forEach(function (tr) { B.want(tr.video); });
     }
     function seek(tr, f) {
       tr.target = f;
       var v = tr.video;
       if (f === tr.cur) return;
-      if (v.readyState < 1) { load(); return; }
+      if (v.readyState < 1) { if (!st.quiet) load(); return; }
       if (v.seeking) return;
       tr.cur = f;
       try { v.currentTime = (f + 0.5) / tr.ep.fps; } catch (e) {}
@@ -203,7 +203,8 @@
       }, { rootMargin: '400px 0px' }).observe(root);
     }
     st.wrist = -2;
-    render();
+    /* the first frame is the poster: drawing it must not start the downloads (load6.js fetches the videos in page order) */
+    st.quiet = true; render(); st.quiet = false;
     /* handle for scripted checks */
     window.realPlayer = { state: st, setT: setT, play: play, pause: pause, stateAt: stateAt };
   }

@@ -12,8 +12,23 @@
 <link rel="stylesheet" href="assets/fonts/site3.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="evidence6.css">
+<link rel="stylesheet" href="gate6.css">
+<!-- entry screen, decided here so that it is there from the first paint: a loading screen on a computer, a note on a phone (gate6.js).
+     Shown once per tab; ?gate=off turns it off (tests), ?device=phone shows the phone note on a computer. -->
+<script>(function () {
+  var d = document.documentElement, q = location.search, s = null;
+  try { s = window.sessionStorage; } catch (e) {}
+  var phone = /[?&]device=phone\b/.test(q) || /iPhone|iPod|Android.+Mobile|Windows Phone|Mobi/i.test(navigator.userAgent) ||
+    !!(window.matchMedia && matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 600);
+  if (phone) d.classList.add('is-phone');
+  if (/[?&]gate=off\b/.test(q)) return;
+  var preview = /[?&](gate=[a-z]|gsim=|ghold=|device=phone)/.test(q);
+  if (phone) { if (preview || !(s && s.getItem('bapl-phone-ok'))) d.classList.add('gate-on', 'gate-phone'); }
+  else if (preview || !(s && s.getItem('bapl-entered'))) d.classList.add('gate-on', 'gate-load');
+})();</script>
 </head>
 <body>
+<script src="gate6.js"></script>
 
 <header class="nav" id="nav">
   <a class="nav-brand" href="#top"><img src="assets/img/logo_funnel.svg" alt="" width="22" height="22"><span>Boundary-Aware Policy Learning</span></a>
@@ -572,6 +587,8 @@
 <script src="assets/data/episodes.js"></script>
 <script src="assets/data/real.js"></script>
 <script src="app.js"></script>
+<script src="assets/data/sizes.js"></script>
+<script src="load6.js"></script>
 <script src="diagram6.js"></script>
 <script src="story6.js"></script>
 <script src="stage6.js"></script>

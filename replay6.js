@@ -123,12 +123,13 @@
         });
       }, { rootMargin: '500px 0px' }).observe($('#console'));
     }
-    render();
+    /* the first frame is the poster: drawing it must not start the downloads (load6.js fetches the videos in page order) */
+    con.quiet = true; render(); con.quiet = false;
   }
   function loadAll() {
-    if (con.ready) return;
+    if (con.ready || con.quiet || !B.mayLoad()) return;
     con.ready = true;
-    IDS.forEach(function (id) { var tr = con.tracks[id]; tr.loading = true; tr.video.preload = 'auto'; tr.video.load(); });
+    IDS.forEach(function (id) { var tr = con.tracks[id]; tr.loading = true; B.want(tr.video); });
   }
   function seek(tr, f) {
     /* seek only when the target frame changed and the previous seek has landed; 'seeked' re-applies the latest target */
